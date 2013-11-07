@@ -3,6 +3,7 @@ package quile.CayenneQuery;
 import org.apache.cayenne.BaseContext;
 import org.apache.cayenne.ObjectContext;
 import org.apache.cayenne.access.DataContext;
+import org.apache.cayenne.exp.ExpressionFactory;
 import org.apache.cayenne.query.SelectQuery;
 import org.apache.cayenne.query.Ordering;
 import org.apache.cayenne.query.SortOrder;
@@ -10,6 +11,11 @@ import org.apache.cayenne.exp.Expression;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 class Query {
 
@@ -19,7 +25,9 @@ class Query {
     private boolean _distinct;
     private List<Ordering> _sortOrderings = new ArrayList<Ordering>();
     private List<Expression> _expressions = new ArrayList<Expression>();
-    private List<Object> _parameters = new ArrayList<Object>();
+    private Map<String, Object> _parameters = new HashMap<String, Object>();
+
+    private Class _target;
 
     public ObjectContext _objectContext() {
         if (_objectContext == null) {
@@ -76,16 +84,44 @@ class Query {
         return orderBy(path, true, false);
     }
 
+    private const Pattern PARAMETER_REGEXP = Pattern.compile("\$([a-zA-Z0-9_-]+)");
+
     public Query filter(String filter, Object... args) {
         Expression exp = Expression.fromString(filter);
         _expressions.add(exp);
 
+        Matcher m = PARAMETER_REGEXP.matcher(filter);
+
+        List<String> parameters = new ArrayList<String>();
+        while (m.find()) {
+            parameters.add(m.group(1));
+        }
+
         if (args != null) {
             for (int i = 0; i < args.length; i++) {
-                _parameters.add(args[i]);
+                _parameters.put(parameters.get(i), args[i]);
             }
         }
         return this;
+    }
+
+    public SelectQuery selectQuery() {
+        return selectQuery(_target);
+    }
+
+    public SelectQuery selectQuery(Class target) throws Exception {
+        if (target == null) {
+            throw new Exception("No target class specified for fetch");
+        }
+        SelectQuery s = new SelectQuery(target);
+
+        Expression e = ExpressionFactory.joinExp(Expression.AND, _expressions);
+        s.setQualifier(e);
+
+        s.setFetchLimit(_limit);
+        s.setFetchOffset(_offset);
+
+        return s;
     }
 
     public static void main(String args[]) {
